@@ -45,39 +45,43 @@ python src/main.py
 
 ## Deploy to GitHub Actions
 
-Use the **`job-hunter-bot` folder as the repository root** (so `.github/workflows/` and `src/main.py` paths match the workflow).
+Use this repo as the **root** of the GitHub project (so `.github/workflows/job_search.yml` and `src/main.py` paths match).
 
-1. **Create the repo on GitHub** (empty, no README) and copy the remote URL, e.g. `https://github.com/YOU/job-hunter-bot.git`.
+### After `git push` (finish setup)
 
-2. **From your machine**, in this folder:
+1. **Actions permissions** — **Settings → Actions → General → Workflow permissions**  
+   - Prefer **Read and write permissions** (needed for `actions/cache` to save `posted_jobs.json` between runs), **or** keep “Read repository contents” only if your org already grants `actions: write` via the workflow file (this repo sets `permissions.actions: write`).
 
-   ```bash
-   cd job-hunter-bot
-   git init
-   git add .
-   git commit -m "Add job hunter bot and GitHub Actions workflow"
-   git branch -M main
-   git remote add origin https://github.com/YOU/job-hunter-bot.git
-   git push -u origin main
-   ```
+2. **Repository secrets** — **Settings → Secrets and variables → Actions** → **Secrets** → **New repository secret**. Names must match **exactly** (case-sensitive):
 
-   Do **not** commit `.env`; it is listed in `.gitignore`. Posted-job state lives under `.data/` (also ignored); **Actions restores/saves** `.data/posted_jobs.json` via cache between runs.
+   | Secret name | Value |
+   |-------------|--------|
+   | `JSEARCH_API_KEY` | RapidAPI key for JSearch |
+   | `DISCORD_WEBHOOK_URL` | Discord incoming webhook URL |
 
-3. **Repository secrets** — GitHub → **Settings → Secrets and variables → Actions → New repository secret**:
+3. **Default branch** — Scheduled cron only runs workflows from the **default** branch (usually `main`). **Settings → General** → confirm default branch is the one you pushed.
 
-   | Name | Value |
-   |------|--------|
-   | `JSEARCH_API_KEY` | Your RapidAPI key for JSearch |
-   | `DISCORD_WEBHOOK_URL` | Your Discord incoming webhook URL |
+4. **Manual test** — **Actions** → **Job search notify** → **Run workflow** → branch `main` → **Run workflow**. Open the run, expand **Run job hunter**, confirm it exits **0** and Discord shows the bot.
 
-4. **Enable Actions** — **Settings → Actions → General**: allow Actions (default for new repos is usually fine).
+5. **Schedules** — Cron runs at **13:00** and **23:00 UTC** daily. First scheduled run may take until the next slot after you push.
 
-5. **Test** — **Actions** tab → **Job search notify** → **Run workflow** → **Run workflow**. Open the run log to confirm it finished without errors and check Discord.
+6. **Optional variables** — **Settings → Secrets and variables → Actions** → **Variables** tab (not Secrets): `SEARCH_KEYWORDS`, `MAX_JOBS_PER_POST`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`, `POSTED_JOBS_FILE` — only if you want overrides without code changes.
 
-### Schedule (already in the workflow)
+### First-time clone / push (reference)
 
-- **Cron:** `0 13 * * *` and `0 23 * * *` UTC (roughly morning / evening US Eastern in standard time).  
-- **Python:** 3.11 on `ubuntu-latest`.  
-- **Optional repo variables** (same tab, **Variables**): `SEARCH_KEYWORDS`, `MAX_JOBS_PER_POST`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`, `POSTED_JOBS_FILE` — only if you want to override defaults without changing code.
+```bash
+cd job-hunter-bot
+git remote add origin git@github.com:YOUR_USER/YOUR_REPO.git   # or HTTPS
+# If origin already exists:
+git remote set-url origin git@github.com:YOUR_USER/YOUR_REPO.git
+git push -u origin main
+```
 
-**Note:** EST vs EDT shifts relative to UTC; tweak the cron expressions if you need fixed local clock times year-round.
+Do **not** commit `.env` (gitignored). Local **`.data/`** is gitignored; CI keeps **`posted_jobs.json`** via **Actions cache**.
+
+### Schedule (workflow file)
+
+- **Cron:** `0 13 * * *` and `0 23 * * *` UTC (approx. morning / evening US Eastern in standard time).  
+- **Python:** 3.11 on `ubuntu-latest`.
+
+**Notes:** EST vs EDT shifts vs UTC; adjust crons if you need fixed Eastern clock times. **Forks** do not run scheduled workflows until enabled in the fork’s Actions settings.

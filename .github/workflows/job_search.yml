@@ -9,6 +9,8 @@ on:
 
 permissions:
   contents: read
+  # Explicit token scopes so actions/cache restore+save work (narrow defaults otherwise disable cache writes).
+  actions: write
 
 concurrency:
   group: job-hunter-${{ github.workflow }}-${{ github.ref }}
