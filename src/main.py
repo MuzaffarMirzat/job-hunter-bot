@@ -51,11 +51,11 @@ def _posted_timestamp(job: dict[str, Any]) -> float:
 
 
 def detect_session() -> str:
-    """UTC hour 13 → morning (8AM EST); hour 23 → evening (6PM EST); else heuristic."""
+    """Align with scheduled runs: 10 AM EST → 15 UTC (morning); 7 PM EST → 00 UTC (evening)."""
     hour = datetime.now(timezone.utc).hour
-    if hour == 13:
+    if hour == 15:
         return "morning"
-    if hour == 23:
+    if hour == 0:
         return "evening"
     if hour < 20:
         return "morning"
