@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import requests
@@ -21,24 +23,24 @@ class JobsSearchQuotaExceeded(Exception):
 RAPID_HOST = "jobs-search-api.p.rapidapi.com"
 GETJOBS_URL = f"https://{RAPID_HOST}/getjobs"
 
-# Match RapidAPI playground; tweak via env later if needed.
+# US-focused boards; naukri/bayt often add noise for ``United States`` searches.
 DEFAULT_SITE_NAMES = [
-    "indeed",
     "linkedin",
+    "indeed",
     "zip_recruiter",
     "glassdoor",
-    "naukri",
-    "bayt",
 ]
 
 
 def _hours_old_from_date_posted(jsearch_value: str | None) -> int:
     """Map JSearch-style ``JOB_SEARCH_DATE_POSTED`` to ``hours_old`` for this API."""
     if not jsearch_value:
-        return 24
+        return 48
     v = jsearch_value.strip().lower()
     if v in ("today", "day", "24h", "24hours"):
         return 24
+    if v in ("yesterday",):
+        return 48
     if v in ("3days", "3_days", "last3days"):
         return 72
     if v in ("week", "7days"):
@@ -46,6 +48,30 @@ def _hours_old_from_date_posted(jsearch_value: str | None) -> int:
     if v in ("month", "30days"):
         return 720
     return 72
+
+
+def _effective_hours_old(date_posted: str | None) -> int:
+    """``JOBS_SEARCH_HOURS_OLD`` integer override (1–720), else mapped from ``date_posted``."""
+    raw = os.environ.get("JOBS_SEARCH_HOURS_OLD")
+    if raw is not None and raw.strip().isdigit():
+        return max(1, min(int(raw.strip()), 720))
+    return _hours_old_from_date_posted(date_posted)
+
+
+def _employer_skip_substrings() -> tuple[str, ...]:
+    """
+    Drop listings whose company name contains any of these substrings (case-insensitive).
+
+    Default ``amazon`` reduces repetitive megacorp spam; set ``JOBS_SEARCH_SKIP_EMPLOYER_SUBSTR=none``
+    to disable, or ``acme,contoso`` for a custom list.
+    """
+    raw = os.environ.get("JOBS_SEARCH_SKIP_EMPLOYER_SUBSTR")
+    if raw is None:
+        return ("amazon",)
+    t = raw.strip().lower()
+    if t in ("", "none", "off", "-", "false"):
+        return ()
+    return tuple(x.strip().lower() for x in raw.split(",") if x.strip())
 
 
 def _country_indeed(country: str | None) -> str:
@@ -58,6 +84,73 @@ def _country_indeed(country: str | None) -> str:
     if c in ("UK", "GB"):
         return "UK"
     return country.strip()
+
+
+def _parse_posted_to_utc_ts(val: Any) -> float | None:
+    """Parse JobSpy / API ``date_posted`` into a UTC Unix timestamp when possible."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip()
+    if not s:
+        return None
+    s_iso = s.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(s_iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except ValueError:
+        pass
+    if len(s) >= 10:
+        try:
+            dt = datetime.strptime(s[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except ValueError:
+            pass
+    return None
+
+
+def _filter_raw_by_recency(raw_list: list[dict[str, Any]], max_hours: int) -> list[dict[str, Any]]:
+    """
+    Drop rows with a parseable ``date_posted`` older than ``max_hours`` (with small slack).
+
+    Indeed/LinkedIn often ignore ``hours_old`` when combined with other filters; this is a safety net.
+    """
+    if max_hours <= 0:
+        return raw_list
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=max(1, int(max_hours * 1.15)))
+    cutoff_ts = cutoff.timestamp()
+    kept: list[dict[str, Any]] = []
+    dropped = 0
+    for raw in raw_list:
+        val = raw.get("date_posted") or raw.get("DATE_POSTED") or raw.get("posted_date")
+        ts = _parse_posted_to_utc_ts(val)
+        if ts is not None and ts < cutoff_ts:
+            dropped += 1
+            continue
+        kept.append(raw)
+    if dropped:
+        logger.info("Jobs Search API: dropped %s listing(s) older than ~%s h (parsed date_posted).", dropped, max_hours)
+    return kept
+
+
+def _filter_by_employer_skip(jobs: list[dict[str, Any]], patterns: tuple[str, ...]) -> list[dict[str, Any]]:
+    if not patterns:
+        return jobs
+    out: list[dict[str, Any]] = []
+    dropped = 0
+    for job in jobs:
+        emp = (job.get("employer_name") or "").lower()
+        if any(p and p in emp for p in patterns):
+            dropped += 1
+            continue
+        out.append(job)
+    if dropped:
+        logger.info("Jobs Search API: dropped %s listing(s) matching JOBS_SEARCH_SKIP_EMPLOYER_SUBSTR.", dropped)
+    return out
 
 
 def _extract_jobs_list(payload: Any) -> list[dict[str, Any]]:
@@ -165,6 +258,12 @@ def _normalize_record(raw: dict[str, Any]) -> dict[str, Any]:
         raw.get("employment_type"),
     )
 
+    posted_ts: float | None = None
+    raw_dp = raw.get("date_posted") or raw.get("DATE_POSTED") or raw.get("posted_date")
+    ts = _parse_posted_to_utc_ts(raw_dp)
+    if ts is not None:
+        posted_ts = ts
+
     out: dict[str, Any] = {
         "job_id": job_id if isinstance(job_id, str) and job_id.strip() else None,
         "job_title": title,
@@ -182,7 +281,7 @@ def _normalize_record(raw: dict[str, Any]) -> dict[str, Any]:
         "job_max_salary": max_a,
         "job_posted_at": posted,
         "job_posted_at_datetime_utc": None,
-        "job_posted_at_timestamp": None,
+        "job_posted_at_timestamp": posted_ts,
         "_source_api": "jobs_search_api",
     }
     return {k: v for k, v in out.items() if v is not None}
@@ -193,6 +292,7 @@ def _post_getjobs(
     api_key: str,
     body: dict[str, Any],
     timeout_sec: float,
+    recency_hours: int,
 ) -> list[dict[str, Any]]:
     headers = {
         "Content-Type": "application/json",
@@ -222,7 +322,42 @@ def _post_getjobs(
             "Jobs Search API: no job list in response; keys=%s",
             list(payload.keys())[:20],
         )
-    return [_normalize_record(j) for j in raw_list]
+
+    raw_list = _filter_raw_by_recency(raw_list, recency_hours)
+    normalized = [_normalize_record(j) for j in raw_list]
+    return _filter_by_employer_skip(normalized, _employer_skip_substrings())
+
+
+def _build_getjobs_body(
+    *,
+    search_term: str,
+    location: str,
+    country_indeed: str,
+    results_wanted: int,
+    hours_old: int,
+    page: int,
+) -> dict[str, Any]:
+    """
+    Build JSON for ``/getjobs``.
+
+    JobSpy / Indeed: **do not** send ``job_type`` or ``is_remote`` together with ``hours_old`` — Indeed
+    then effectively drops the time filter and you get very old rows. Put ``remote`` in ``search_term``
+    instead when you mean remote work.
+    """
+    body: dict[str, Any] = {
+        "search_term": search_term,
+        "location": location,
+        "country_indeed": country_indeed,
+        "results_wanted": max(1, min(int(results_wanted), 100)),
+        "site_name": list(DEFAULT_SITE_NAMES),
+        "distance": 50,
+        "hours_old": max(1, min(int(hours_old), 720)),
+        "linkedin_fetch_description": False,
+    }
+    page_off = max(0, (max(1, int(page or 1)) - 1) * 25)
+    if page_off:
+        body["offset"] = page_off
+    return body
 
 
 def search_jobs(
@@ -238,26 +373,22 @@ def search_jobs(
     results_wanted: int = 20,
 ) -> list[dict[str, Any]]:
     """
-    Single POST ``/getjobs`` (``page`` → optional ``offset``; ``employment_type`` ignored — API uses ``job_type``).
+    Single POST ``/getjobs`` (``employment_type`` ignored — recency mode uses ``hours_old`` only).
     """
     _ = employment_type
-    hours_old = _hours_old_from_date_posted(date_posted)
-    body: dict[str, Any] = {
-        "search_term": query,
-        "location": "United States",
-        "country_indeed": country_indeed,
-        "results_wanted": max(1, min(int(results_wanted), 100)),
-        "site_name": list(DEFAULT_SITE_NAMES),
-        "distance": 50,
-        "job_type": "fulltime",
-        "is_remote": remote_only is True,
-        "linkedin_fetch_description": False,
-        "hours_old": hours_old,
-    }
-    off = max(0, (max(1, page) - 1) * 25)
-    if off:
-        body["offset"] = off
-    return _post_getjobs(api_key=api_key, body=body, timeout_sec=timeout_sec)
+    hours_old = _effective_hours_old(date_posted)
+    q = (query or "").strip()
+    if remote_only is True and "remote" not in q.lower():
+        q = f"{q} remote".strip()
+    body = _build_getjobs_body(
+        search_term=q,
+        location="United States",
+        country_indeed=country_indeed,
+        results_wanted=max(1, min(int(results_wanted), 100)),
+        hours_old=hours_old,
+        page=page,
+    )
+    return _post_getjobs(api_key=api_key, body=body, timeout_sec=timeout_sec, recency_hours=hours_old)
 
 
 def fetch_jobs(
@@ -280,35 +411,35 @@ def fetch_jobs(
 
     if loc_lower == "remote":
         loc_str = "United States"
-        is_remote = True
+        want_remote_in_query = True
     elif loc_lower == "onsite":
         loc_str = "United States"
-        is_remote = False
+        want_remote_in_query = False
     else:
         loc_str = loc_raw if loc_raw else "United States"
-        is_remote = False
+        want_remote_in_query = False
 
-    search_term = f"{kw} engineer".strip()
-    hours_old = _hours_old_from_date_posted(date_posted)
+    search_term = f"{kw} automation engineer".strip()
+    if want_remote_in_query and "remote" not in search_term.lower():
+        search_term = f"{search_term} remote".strip()
+
+    hours_old = _effective_hours_old(date_posted)
     country_indeed = _country_indeed(country)
 
-    # Single POST per keyword/location; widen ``results_wanted`` when ``JOB_SEARCH_NUM_PAGES`` > 1.
     results_wanted = min(max(10, 15 * int(num_pages or 1)), 100)
 
-    body: dict[str, Any] = {
-        "search_term": search_term,
-        "location": loc_str,
-        "country_indeed": country_indeed,
-        "results_wanted": results_wanted,
-        "site_name": list(DEFAULT_SITE_NAMES),
-        "distance": 50,
-        "job_type": "fulltime",
-        "is_remote": is_remote,
-        "linkedin_fetch_description": False,
-        "hours_old": hours_old,
-    }
-    page_off = max(0, (max(1, int(page or 1)) - 1) * 25)
-    if page_off:
-        body["offset"] = page_off
+    body = _build_getjobs_body(
+        search_term=search_term,
+        location=loc_str,
+        country_indeed=country_indeed,
+        results_wanted=results_wanted,
+        hours_old=hours_old,
+        page=max(1, int(page or 1)),
+    )
 
-    return _post_getjobs(api_key=api_key, body=body, timeout_sec=timeout_sec)
+    return _post_getjobs(
+        api_key=api_key,
+        body=body,
+        timeout_sec=timeout_sec,
+        recency_hours=hours_old,
+    )

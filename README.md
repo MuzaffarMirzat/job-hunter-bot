@@ -38,7 +38,7 @@ JSEARCH_API_KEY=your_key_here
 DISCORD_WEBHOOK_URL=your_webhook_here
 ```
 
-Optional: `JOB_SEARCH_PROVIDER` (`jsearch` or `jobs_search`), `SEARCH_KEYWORDS`, `MAX_JOBS_PER_POST` (default **15**, max 25), `POSTED_JOBS_FILE`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`.
+Optional: `JOB_SEARCH_PROVIDER` (`jsearch` or `jobs_search`), `SEARCH_KEYWORDS`, `MAX_JOBS_PER_POST` (default **15**, max 25), `POSTED_JOBS_FILE`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`. For **`jobs_search` only:** `JOBS_SEARCH_HOURS_OLD` (1–720, overrides recency window), `JOBS_SEARCH_SKIP_EMPLOYER_SUBSTR` (comma-separated substrings to drop from results; default skips `amazon`, set to `none` to keep Amazon listings).
 
 ### Free / BASIC tier (default behavior)
 
