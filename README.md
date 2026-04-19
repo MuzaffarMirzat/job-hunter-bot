@@ -16,7 +16,7 @@ Job data from **JSearch** or **[JOBS SEARCH API](https://rapidapi.com/rphrp1985/
 |------|------|
 | `src/main.py` | Orchestration |
 | `src/jsearch.py` | JSearch: `fetch_jobs`, `search_jobs`; `filter_jobs` re-export |
-| `src/jobs_search_api.py` | JOBS SEARCH API: `fetch_jobs`, `search_jobs`, quota exception |
+| `src/jobs_search_api.py` | JOBS SEARCH API: POST `/getjobs`, `fetch_jobs`, `search_jobs`, quota exception |
 | `src/job_filter.py` | `filter_jobs` implementation |
 | `src/job_formatter.py` | `format_job_embed`, `format_header_message` |
 | `src/discord_notifier.py` | `send_header`, `send_job_embed`, `send_summary`, `send_no_jobs_message` |

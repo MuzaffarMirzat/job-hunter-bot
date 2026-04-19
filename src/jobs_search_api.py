@@ -1,4 +1,4 @@
-"""RapidAPI JOBS SEARCH API (jobs-search-api.p.rapidapi.com) — temporary alternative to JSearch."""
+"""RapidAPI JOBS SEARCH API — POST /getjobs (JobSpy-style body)."""
 
 from __future__ import annotations
 
@@ -19,48 +19,74 @@ class JobsSearchQuotaExceeded(Exception):
 
 
 RAPID_HOST = "jobs-search-api.p.rapidapi.com"
-SEARCH_URL = f"https://{RAPID_HOST}/jobs/search"
+GETJOBS_URL = f"https://{RAPID_HOST}/getjobs"
+
+# Match RapidAPI playground; tweak via env later if needed.
+DEFAULT_SITE_NAMES = [
+    "indeed",
+    "linkedin",
+    "zip_recruiter",
+    "glassdoor",
+    "naukri",
+    "bayt",
+]
 
 
-def _map_date_posted(jsearch_value: str | None) -> str:
-    """Map JSearch-style ``date_posted`` to this API's filter values."""
+def _hours_old_from_date_posted(jsearch_value: str | None) -> int:
+    """Map JSearch-style ``JOB_SEARCH_DATE_POSTED`` to ``hours_old`` for this API."""
     if not jsearch_value:
-        return "day"
+        return 24
     v = jsearch_value.strip().lower()
     if v in ("today", "day", "24h", "24hours"):
-        return "day"
+        return 24
     if v in ("3days", "3_days", "last3days"):
-        return "3days"
+        return 72
     if v in ("week", "7days"):
-        return "week"
+        return 168
     if v in ("month", "30days"):
-        return "month"
-    return v if v in ("day", "3days", "week", "month") else "day"
+        return 720
+    return 72
+
+
+def _country_indeed(country: str | None) -> str:
+    """Indeed/Glassdoor expect names like ``USA`` (see JobSpy docs)."""
+    if not country:
+        return "USA"
+    c = country.strip().upper()
+    if c in ("US", "USA", "UNITED STATES"):
+        return "USA"
+    if c in ("UK", "GB"):
+        return "UK"
+    return country.strip()
 
 
 def _extract_jobs_list(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [x for x in payload if isinstance(x, dict)]
     if not isinstance(payload, dict):
         return []
-    jobs = payload.get("jobs")
-    if isinstance(jobs, list):
-        return [x for x in jobs if isinstance(x, dict)]
+    for key in ("jobs", "results", "listings", "job_listings", "data"):
+        v = payload.get(key)
+        if isinstance(v, list) and v and isinstance(v[0], dict):
+            return [x for x in v if isinstance(x, dict)]
     data = payload.get("data")
     if isinstance(data, dict):
-        inner = data.get("jobs")
-        if isinstance(inner, list):
-            return [x for x in inner if isinstance(x, dict)]
+        for inner_key in ("jobs", "results", "listings"):
+            inner = data.get(inner_key)
+            if isinstance(inner, list):
+                return [x for x in inner if isinstance(x, dict)]
     return []
 
 
-def _has_next_page(payload: dict[str, Any]) -> bool:
-    data = payload.get("data")
-    if isinstance(data, dict) and data.get("has_next_page") is True:
-        return True
-    return False
+def _first_str(*vals: object | None) -> str | None:
+    for v in vals:
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return None
 
 
 def _primary_apply_url(raw: dict[str, Any]) -> str | None:
-    direct = raw.get("apply_link")
+    direct = raw.get("apply_link") or raw.get("job_url") or raw.get("JOB_URL")
     if isinstance(direct, str) and direct.strip():
         return direct.strip()
     links = raw.get("apply_links")
@@ -84,37 +110,65 @@ def _primary_apply_url(raw: dict[str, Any]) -> str | None:
 
 
 def _normalize_record(raw: dict[str, Any]) -> dict[str, Any]:
-    """Map provider fields to the JSearch-like shape used by filters, embeds, and ids."""
-    job_id = raw.get("job_id")
-    title = raw.get("title") or raw.get("job_title")
-    company = raw.get("company") or raw.get("employer_name")
-    location = raw.get("location")
-    apply_url = _primary_apply_url(raw)
+    """Map provider / JobSpy-shaped rows to the JSearch-like dict used downstream."""
+    job_id = raw.get("job_id") or raw.get("id")
+    if job_id is not None and not isinstance(job_id, str):
+        job_id = str(job_id)
+
+    title = _first_str(
+        raw.get("title"),
+        raw.get("TITLE"),
+        raw.get("job_title"),
+    ) or ""
+
+    company = _first_str(
+        raw.get("company"),
+        raw.get("COMPANY"),
+        raw.get("employer_name"),
+    ) or ""
+
+    apply_url = _primary_apply_url(raw) or _first_str(
+        raw.get("url"),
+        raw.get("link"),
+    )
 
     job_city: str | None = None
     job_state: str | None = None
-    if isinstance(location, str) and location.strip():
-        parts = [p.strip() for p in location.split(",") if p.strip()]
+    loc = raw.get("location")
+    if isinstance(loc, dict):
+        job_city = _first_str(loc.get("city"), loc.get("CITY"))
+        job_state = _first_str(loc.get("state"), loc.get("STATE"))
+    elif isinstance(loc, str) and loc.strip():
+        parts = [p.strip() for p in loc.split(",") if p.strip()]
         if len(parts) >= 2:
             job_city, job_state = parts[0], parts[1]
         elif len(parts) == 1:
             job_city = parts[0]
 
-    salary = raw.get("salary")
-    salary_str = salary.strip() if isinstance(salary, str) and salary.strip() else None
+    salary_str = _first_str(raw.get("salary"))
+    min_a = raw.get("min_amount") or raw.get("MIN_AMOUNT")
+    max_a = raw.get("max_amount") or raw.get("MAX_AMOUNT")
 
-    posted = raw.get("posted_date") or raw.get("date_posted")
+    posted = _first_str(
+        raw.get("date_posted"),
+        raw.get("DATE_POSTED"),
+        raw.get("posted_date"),
+    )
 
     is_remote = raw.get("is_remote")
-    if is_remote is None and isinstance(location, str):
-        is_remote = "remote" in location.lower()
+    if is_remote is None:
+        is_remote = raw.get("IS_REMOTE")
 
-    emp = raw.get("employment_type") or raw.get("type")
+    emp = _first_str(
+        raw.get("job_type"),
+        raw.get("JOB_TYPE"),
+        raw.get("employment_type"),
+    )
 
     out: dict[str, Any] = {
         "job_id": job_id if isinstance(job_id, str) and job_id.strip() else None,
-        "job_title": title if isinstance(title, str) else str(title or ""),
-        "employer_name": company if isinstance(company, str) else str(company or ""),
+        "job_title": title,
+        "employer_name": company,
         "job_apply_link": apply_url,
         "job_google_link": apply_url,
         "apply_link": apply_url,
@@ -122,11 +176,11 @@ def _normalize_record(raw: dict[str, Any]) -> dict[str, Any]:
         "job_state": job_state,
         "job_country": None,
         "job_is_remote": bool(is_remote) if is_remote is not None else None,
-        "job_employment_type": emp if isinstance(emp, str) else None,
+        "job_employment_type": emp,
         "job_salary": salary_str,
-        "job_min_salary": None,
-        "job_max_salary": None,
-        "job_posted_at": posted if isinstance(posted, str) else None,
+        "job_min_salary": min_a,
+        "job_max_salary": max_a,
+        "job_posted_at": posted,
         "job_posted_at_datetime_utc": None,
         "job_posted_at_timestamp": None,
         "_source_api": "jobs_search_api",
@@ -134,31 +188,18 @@ def _normalize_record(raw: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in out.items() if v is not None}
 
 
-def _fetch_page(
+def _post_getjobs(
     *,
     api_key: str,
-    query: str,
-    page: int,
-    date_posted: str,
-    employment_type: str | None,
-    remote_only: bool | None,
+    body: dict[str, Any],
     timeout_sec: float,
-) -> tuple[list[dict[str, Any]], bool]:
+) -> list[dict[str, Any]]:
     headers = {
+        "Content-Type": "application/json",
         "X-RapidAPI-Key": api_key,
         "X-RapidAPI-Host": RAPID_HOST,
     }
-    params: dict[str, Any] = {
-        "query": query,
-        "page": str(max(1, page)),
-        "date_posted": date_posted,
-    }
-    if employment_type:
-        params["type"] = employment_type
-    if remote_only is True:
-        params["work_from_home"] = "true"
-
-    resp = requests.get(SEARCH_URL, headers=headers, params=params, timeout=timeout_sec)
+    resp = requests.post(GETJOBS_URL, headers=headers, json=body, timeout=timeout_sec)
     if resp.status_code == 429:
         snippet = (resp.text or "")[:500]
         logger.warning("Jobs Search API 429 — %s", snippet)
@@ -173,14 +214,15 @@ def _fetch_page(
         payload = resp.json()
     except ValueError:
         logger.warning("Jobs Search API non-JSON body")
-        return [], False
-
-    if not isinstance(payload, dict):
-        return [], False
+        return []
 
     raw_list = _extract_jobs_list(payload)
-    normalized = [_normalize_record(j) for j in raw_list]
-    return normalized, _has_next_page(payload)
+    if not raw_list and isinstance(payload, dict):
+        logger.warning(
+            "Jobs Search API: no job list in response; keys=%s",
+            list(payload.keys())[:20],
+        )
+    return [_normalize_record(j) for j in raw_list]
 
 
 def search_jobs(
@@ -192,18 +234,30 @@ def search_jobs(
     employment_type: str | None = "full-time",
     remote_only: bool | None = None,
     timeout_sec: float = 30.0,
+    country_indeed: str = "USA",
+    results_wanted: int = 20,
 ) -> list[dict[str, Any]]:
-    """Single-page search (normalized job dicts)."""
-    jobs, _ = _fetch_page(
-        api_key=api_key,
-        query=query,
-        page=page,
-        date_posted=date_posted,
-        employment_type=employment_type,
-        remote_only=remote_only,
-        timeout_sec=timeout_sec,
-    )
-    return jobs
+    """
+    Single POST ``/getjobs`` (``page`` → optional ``offset``; ``employment_type`` ignored — API uses ``job_type``).
+    """
+    _ = employment_type
+    hours_old = _hours_old_from_date_posted(date_posted)
+    body: dict[str, Any] = {
+        "search_term": query,
+        "location": "United States",
+        "country_indeed": country_indeed,
+        "results_wanted": max(1, min(int(results_wanted), 100)),
+        "site_name": list(DEFAULT_SITE_NAMES),
+        "distance": 50,
+        "job_type": "fulltime",
+        "is_remote": remote_only is True,
+        "linkedin_fetch_description": False,
+        "hours_old": hours_old,
+    }
+    off = max(0, (max(1, page) - 1) * 25)
+    if off:
+        body["offset"] = off
+    return _post_getjobs(api_key=api_key, body=body, timeout_sec=timeout_sec)
 
 
 def fetch_jobs(
@@ -218,40 +272,43 @@ def fetch_jobs(
     timeout_sec: float = 30.0,
 ) -> list[dict[str, Any]]:
     """
-    Same call pattern as ``src.jsearch.fetch_jobs`` — one or more pages, JSearch-like job dicts out.
-
-    Note: ``country`` is accepted for signature parity; the upstream API may ignore it.
+    Same call pattern as ``src.jsearch.fetch_jobs`` — POST ``/getjobs``, normalized job dicts out.
     """
-    _ = country
     kw = (keyword or "").strip()
     loc_raw = (location or "").strip()
     loc_lower = loc_raw.lower()
-    remote_only: bool | None = True if loc_lower == "remote" else (False if loc_lower == "onsite" else None)
 
-    query = f"{kw} engineer {loc_raw}".strip()
-    mapped_date = _map_date_posted(date_posted)
+    if loc_lower == "remote":
+        loc_str = "United States"
+        is_remote = True
+    elif loc_lower == "onsite":
+        loc_str = "United States"
+        is_remote = False
+    else:
+        loc_str = loc_raw if loc_raw else "United States"
+        is_remote = False
 
-    merged: list[dict[str, Any]] = []
-    max_pages = max(1, min(int(num_pages or 1), 5))
-    start_page = max(1, int(page or 1))
+    search_term = f"{kw} engineer".strip()
+    hours_old = _hours_old_from_date_posted(date_posted)
+    country_indeed = _country_indeed(country)
 
-    for offset in range(max_pages):
-        current_page = start_page + offset
-        batch, has_next = _fetch_page(
-            api_key=api_key,
-            query=query,
-            page=current_page,
-            date_posted=mapped_date,
-            employment_type="full-time",
-            remote_only=remote_only,
-            timeout_sec=timeout_sec,
-        )
-        merged.extend(batch)
-        if not batch:
-            break
-        if offset + 1 >= max_pages:
-            break
-        if not has_next:
-            break
+    # Single POST per keyword/location; widen ``results_wanted`` when ``JOB_SEARCH_NUM_PAGES`` > 1.
+    results_wanted = min(max(10, 15 * int(num_pages or 1)), 100)
 
-    return merged
+    body: dict[str, Any] = {
+        "search_term": search_term,
+        "location": loc_str,
+        "country_indeed": country_indeed,
+        "results_wanted": results_wanted,
+        "site_name": list(DEFAULT_SITE_NAMES),
+        "distance": 50,
+        "job_type": "fulltime",
+        "is_remote": is_remote,
+        "linkedin_fetch_description": False,
+        "hours_old": hours_old,
+    }
+    page_off = max(0, (max(1, int(page or 1)) - 1) * 25)
+    if page_off:
+        body["offset"] = page_off
+
+    return _post_getjobs(api_key=api_key, body=body, timeout_sec=timeout_sec)
