@@ -48,11 +48,11 @@ Rough monthly upstream requests ≈ **`JSEARCH_MAX_KEYWORDS` × len(`FETCH_LOCAT
 |---------|---------|--------|
 | `FETCH_LOCATIONS` | `remote` | Skips `united states` (add it only if your plan has headroom). |
 | `JSEARCH_MAX_KEYWORDS` | `3` | Only the first N keywords from `SEARCH_KEYWORDS` each run. Set to **`all`** for no cap (paid tiers). |
-| Schedule | Once daily (10 AM EST) | Second cron is **commented out** in the workflow; uncomment only if quota allows. |
+| Schedule | Once daily (15:00 UTC ≈ morning US Eastern) | Workflow has **one** `schedule` cron; add another line under `schedule:` only if your API quota allows a second daily run. |
 
 On **HTTP 429** with no data, the bot posts a Discord **notice** (no traceback spam).
 
-**Paid / higher quota:** set `JSEARCH_MAX_KEYWORDS=all`, `FETCH_LOCATIONS=remote,united states`, and uncomment the evening cron in `.github/workflows/job_search.yml`.
+**Paid / higher quota:** set `JSEARCH_MAX_KEYWORDS=all`, `FETCH_LOCATIONS=remote,united states`, and optionally add a second `cron:` under `schedule:` in `.github/workflows/job_search.yml` (e.g. evening) if your plan allows it.
 
 ```bash
 python src/main.py
@@ -96,7 +96,7 @@ Do **not** commit `.env` (gitignored). Local **`.data/`** is gitignored; CI keep
 
 ### Schedule (workflow file)
 
-- **Cron (default):** `0 15 * * *` UTC → **10:00 AM EST** (UTC−5; **11 AM** local when EDT). Optional second line in the YAML is **commented** for free-tier quota.  
+- **Cron (default):** `0 15 * * *` UTC → **10:00 AM EST** (UTC−5; **11 AM** local when EDT). Only this one schedule entry (once per day).  
 - **Python:** 3.11 on `ubuntu-latest`.
 
 **Notes:** EST vs EDT shifts vs UTC; adjust crons if you need fixed Eastern clock times. **Forks** do not run scheduled workflows until enabled in the fork’s Actions settings. The workflow uses **actions/checkout@v6**, **actions/setup-python@v6**, and **actions/cache@v5** (Node.js 24–compatible; avoids GitHub’s Node 20 deprecation warnings on hosted runners).
