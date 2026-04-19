@@ -1,12 +1,12 @@
 # Job Hunter Bot
 
-JSearch (RapidAPI) → filter → Discord webhook. Runs on a schedule (morning / evening UTC slots aligned with US Eastern) or via `workflow_dispatch`.
+JSearch (RapidAPI) → filter → Discord webhook. Defaults target **RapidAPI BASIC / free-tier** usage (low request volume). Runs on a **once-daily** schedule (10 AM EST) or via `workflow_dispatch`.
 
 ## Flow
 
 1. **Session** — UTC hour `15` → `morning` (10 AM EST), hour `0` → `evening` (7 PM EST); other hours: heuristic for local runs.
 2. **`posted_jobs.json`** — Created under `.data/` if missing (`{"job_ids": [], "last_updated": ""}`). Keeps the **last 500** ids in order; `last_updated` is set on each save.
-3. **Search** — For each `SEARCH_KEYWORDS` entry: `fetch_jobs(keyword, "remote")` and `fetch_jobs(keyword, "united states")`, merged.
+3. **Search** — For each keyword (capped by **`JSEARCH_MAX_KEYWORDS`**, default **3**) and each **`FETCH_LOCATIONS`** entry (default **`remote`** only), `fetch_jobs` merges results.
 4. **`filter_jobs`** — Dedupe, title keywords (automation, SDET, QA, …), drop ids already in `posted_jobs.json` (re-exported from `src.jsearch` for convenience).
 5. **Discord** — `send_header` → newest-first slice up to **`MAX_JOBS_PER_POST`** (default 15, max 25), one embed each with 0.5s spacing → `merge_posted_job_ids` → `send_summary`. If nothing to post: `send_no_jobs_message`.
 
@@ -39,7 +39,19 @@ DISCORD_WEBHOOK_URL=your_webhook_here
 
 Optional: `SEARCH_KEYWORDS`, `MAX_JOBS_PER_POST` (default **15**, max 25), `POSTED_JOBS_FILE`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`.
 
-**RapidAPI BASIC / low quotas (HTTP 429):** set **`JSEARCH_MAX_KEYWORDS`** (e.g. `5`) to only search the first N keywords each run, and/or **`FETCH_LOCATIONS=remote`** to skip `united states` (halves JSearch calls). Default locations are `remote` and `united states`. On 429 with no data, the bot posts a short Discord **notice** instead of a traceback.
+### Free / BASIC tier (default behavior)
+
+Rough monthly requests ≈ **`JSEARCH_MAX_KEYWORDS` × len(`FETCH_LOCATIONS`) × scheduled runs per month`** (plus manual runs). Defaults keep this small:
+
+| Setting | Default | Purpose |
+|---------|---------|--------|
+| `FETCH_LOCATIONS` | `remote` | Skips `united states` (add it only if your plan has headroom). |
+| `JSEARCH_MAX_KEYWORDS` | `3` | Only the first N keywords from `SEARCH_KEYWORDS` each run. Set to **`all`** for no cap (paid tiers). |
+| Schedule | Once daily (10 AM EST) | Second cron is **commented out** in the workflow; uncomment only if quota allows. |
+
+On **HTTP 429** with no data, the bot posts a Discord **notice** (no traceback spam).
+
+**Paid / higher quota:** set `JSEARCH_MAX_KEYWORDS=all`, `FETCH_LOCATIONS=remote,united states`, and uncomment the evening cron in `.github/workflows/job_search.yml`.
 
 ```bash
 python src/main.py
@@ -65,7 +77,7 @@ Use this repo as the **root** of the GitHub project (so `.github/workflows/job_s
 
 4. **Manual test** — **Actions** → **Job search notify** → **Run workflow** → branch `main` → **Run workflow**. Open the run, expand **Run job hunter**, confirm it exits **0** and Discord shows the bot.
 
-5. **Schedules** — Cron runs at **15:00** and **00:00 UTC** daily (**10 AM** and **7 PM EST**). First run may wait until the next slot after you push.
+5. **Schedules** — By default cron runs **once** at **15:00 UTC** (**10 AM EST**). First run may wait until the next slot after you push.
 
 6. **Optional variables** — **Settings → Secrets and variables → Actions** → **Variables** tab (not Secrets): `SEARCH_KEYWORDS`, `JSEARCH_MAX_KEYWORDS`, `FETCH_LOCATIONS`, `MAX_JOBS_PER_POST`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`, `POSTED_JOBS_FILE` — only if you want overrides without code changes.
 
@@ -83,7 +95,7 @@ Do **not** commit `.env` (gitignored). Local **`.data/`** is gitignored; CI keep
 
 ### Schedule (workflow file)
 
-- **Cron:** `0 15 * * *` and `0 0 * * *` UTC → **10:00 AM** and **7:00 PM EST** (UTC−5). When US Eastern is on **EDT** (UTC−4), the same runs are **11:00 AM** and **8:00 PM** local.  
+- **Cron (default):** `0 15 * * *` UTC → **10:00 AM EST** (UTC−5; **11 AM** local when EDT). Optional second line in the YAML is **commented** for free-tier quota.  
 - **Python:** 3.11 on `ubuntu-latest`.
 
 **Notes:** EST vs EDT shifts vs UTC; adjust crons if you need fixed Eastern clock times. **Forks** do not run scheduled workflows until enabled in the fork’s Actions settings. The workflow uses **actions/checkout@v6**, **actions/setup-python@v6**, and **actions/cache@v5** (Node.js 24–compatible; avoids GitHub’s Node 20 deprecation warnings on hosted runners).

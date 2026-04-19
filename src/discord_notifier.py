@@ -33,9 +33,18 @@ def _post_json(body: dict[str, Any], *, timeout: float = _DEFAULT_TIMEOUT) -> No
         raise
 
 
-def send_header(session: str, *, new_jobs_count: int) -> None:
+def send_header(
+    session: str,
+    *,
+    new_jobs_count: int,
+    scope_line: str | None = None,
+) -> None:
     """POST plain-text header (``content``)."""
-    content = format_header_message(session, new_jobs_count=new_jobs_count)
+    content = format_header_message(
+        session,
+        new_jobs_count=new_jobs_count,
+        scope_line=scope_line,
+    )
     _post_json({"content": content[:2000], "username": "Job Hunter"})
 
 

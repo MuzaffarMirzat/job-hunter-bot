@@ -92,10 +92,16 @@ def format_job_embed(job: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in embed.items() if v is not None}
 
 
-def format_header_message(session: str, *, new_jobs_count: int) -> str:
+def format_header_message(
+    session: str,
+    *,
+    new_jobs_count: int,
+    scope_line: str | None = None,
+) -> str:
     """
     session: ``morning`` or ``evening``.
     Date line uses US Eastern (aligns with EST-oriented cron commentary).
+    ``scope_line`` describes locations / tier (from settings); optional.
     """
     session = (session or "morning").lower()
     if session == "evening":
@@ -107,11 +113,12 @@ def format_header_message(session: str, *, new_jobs_count: int) -> str:
     now = datetime.now(tz)
     date_human = f"{now.strftime('%A, %B')} {now.day}, {now.year}"
 
+    search_line = scope_line or "Searching: remote (BASIC / free-tier defaults)"
     lines = [
         lead,
         SEPARATOR,
         f"📅 {date_human}",
-        "🔍 Searching: Remote + United States | All Levels",
+        f"🔍 {search_line}",
         f"💼 Found {new_jobs_count} new jobs for you!",
         "",
     ]

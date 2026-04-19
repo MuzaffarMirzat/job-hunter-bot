@@ -117,9 +117,9 @@ def main() -> int:
         send_notice(
             "⚠️ **JSearch / RapidAPI returned HTTP 429** (quota or rate limit). "
             "No job data was fetched this run.\n\n"
-            "**Options:** upgrade your RapidAPI plan for JSearch, wait for the quota window to reset, "
-            "or reduce calls by setting repo **Variables** such as `JSEARCH_MAX_KEYWORDS=5` and/or "
-            "`FETCH_LOCATIONS=remote` (skips `united states` searches).\n"
+            "**Options:** wait for your monthly quota to reset, upgrade JSearch on RapidAPI, "
+            "or tighten free-tier vars: `JSEARCH_MAX_KEYWORDS` (default 3), `FETCH_LOCATIONS` (default `remote`), "
+            "and keep **one** daily cron in the workflow.\n"
             "<https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch>"
         )
         return 0
@@ -133,7 +133,12 @@ def main() -> int:
         logger.info("No new jobs after filter.")
         return 0
 
-    send_header(session, new_jobs_count=len(to_post))
+    kw_cap = settings.max_keywords_per_run
+    cap_txt = "all keywords" if kw_cap is None else f"first {kw_cap} keywords"
+    scope = (
+        f"Searching: {', '.join(settings.fetch_locations)} • {cap_txt} per location"
+    )
+    send_header(session, new_jobs_count=len(to_post), scope_line=scope)
 
     for job in to_post:
         embed = format_job_embed(job)

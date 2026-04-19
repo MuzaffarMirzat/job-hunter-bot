@@ -32,9 +32,11 @@ def _parse_str_list(raw: str | None, default: list[str]) -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
-DEFAULT_FETCH_LOCATIONS = ["remote", "united states"]
+# Free / BASIC tier: one geo per fetch halves calls vs remote + united states.
+DEFAULT_FETCH_LOCATIONS = ["remote"]
 
 
+# Keep the default list short; use SEARCH_KEYWORDS in env for more (watch RapidAPI quota).
 DEFAULT_SEARCH_KEYWORDS = [
     "test automation",
     "QA automation",
@@ -42,15 +44,6 @@ DEFAULT_SEARCH_KEYWORDS = [
     "selenium",
     "playwright",
     "cypress",
-    "senior automation engineer",
-    "senior test automation engineer",
-    "senior QA automation engineer",
-    "senior SDET",
-    "senior selenium engineer",
-    "senior playwright engineer",
-    "senior cypress engineer",
-    "senior automation test engineer",
-    "senior QA test engineer",
 ]
 
 
@@ -86,10 +79,15 @@ class Settings:
         if not fetch_locs:
             fetch_locs = tuple(DEFAULT_FETCH_LOCATIONS)
 
-        max_kw_raw = _env("JSEARCH_MAX_KEYWORDS")
-        max_keywords: int | None = None
-        if max_kw_raw and max_kw_raw.strip().isdigit():
+        # Default cap for BASIC/free tier; set JSEARCH_MAX_KEYWORDS=all for no cap (paid tiers).
+        max_kw_raw = _env("JSEARCH_MAX_KEYWORDS", "3")
+        max_keywords: int | None
+        if max_kw_raw and max_kw_raw.strip().lower() in ("all", "none", "unlimited"):
+            max_keywords = None
+        elif max_kw_raw and max_kw_raw.strip().isdigit():
             max_keywords = max(1, int(max_kw_raw))
+        else:
+            max_keywords = 3
 
         max_jobs = int(_env("MAX_JOBS_PER_POST", "15") or "15")
         num_pages = int(_env("JOB_SEARCH_NUM_PAGES", "1") or "1")

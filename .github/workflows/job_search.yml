@@ -3,9 +3,10 @@ name: Job search notify
 on:
   workflow_dispatch:
   schedule:
-    # 10:00 AM EST = 15:00 UTC; 7:00 PM EST = 00:00 UTC (EST = UTC−5). Shifts by 1h during EDT.
+    # Free / BASIC RapidAPI tier: ONE run per day (10 AM EST = 15:00 UTC, EST = UTC−5).
+    # Doubles JSearch usage if you uncomment the second line (evening) — only if your plan allows it.
     - cron: "0 15 * * *"
-    - cron: "0 0 * * *"
+    # - cron: "0 0 * * *"   # 7 PM EST — paid / higher quota only
 
 permissions:
   contents: read
