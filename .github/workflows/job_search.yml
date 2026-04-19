@@ -49,6 +49,9 @@ jobs:
         env:
           JSEARCH_API_KEY: ${{ secrets.JSEARCH_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # Provider: uncomment one. `jobs_search` = JOBS SEARCH API (rphrp1985); `jsearch` = JSearch (letscrape).
+          # JOB_SEARCH_PROVIDER: jsearch
+          JOB_SEARCH_PROVIDER: jobs_search
         run: python src/main.py
 
       - name: Save posted_jobs.json

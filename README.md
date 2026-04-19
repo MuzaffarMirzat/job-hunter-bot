@@ -1,12 +1,12 @@
 # Job Hunter Bot
 
-JSearch (RapidAPI) → filter → Discord webhook. Defaults target **RapidAPI BASIC / free-tier** usage (low request volume). Runs on a **once-daily** schedule (10 AM EST) or via `workflow_dispatch`.
+Job data from **JSearch** or **[JOBS SEARCH API](https://rapidapi.com/rphrp1985/api/jobs-search-api)** (RapidAPI) → filter → Discord webhook. The workflow sets **`JOB_SEARCH_PROVIDER=jobs_search`** by default so you can stay under JSearch quota; switch to **`jsearch`** when your JSearch allowance resets. Defaults target **BASIC / free-tier** usage (low request volume). Runs on a **once-daily** schedule (10 AM EST) or via `workflow_dispatch`.
 
 ## Flow
 
 1. **Session** — UTC hour `15` → `morning` (10 AM EST), hour `0` → `evening` (7 PM EST); other hours: heuristic for local runs.
 2. **`posted_jobs.json`** — Created under `.data/` if missing (`{"job_ids": [], "last_updated": ""}`). Keeps the **last 500** ids in order; `last_updated` is set on each save.
-3. **Search** — For each keyword (capped by **`JSEARCH_MAX_KEYWORDS`**, default **3**) and each **`FETCH_LOCATIONS`** entry (default **`remote`** only), `fetch_jobs` merges results.
+3. **Search** — For each keyword (capped by **`JSEARCH_MAX_KEYWORDS`**, default **3**) and each **`FETCH_LOCATIONS`** entry (default **`remote`** only), the configured provider’s `fetch_jobs` merges results (normalized to one shape for filters and Discord).
 4. **`filter_jobs`** — Dedupe, title keywords (automation, SDET, QA, …), drop ids already in `posted_jobs.json` (re-exported from `src.jsearch` for convenience).
 5. **Discord** — `send_header` → newest-first slice up to **`MAX_JOBS_PER_POST`** (default 15, max 25), one embed each with 0.5s spacing → `merge_posted_job_ids` → `send_summary`. If nothing to post: `send_no_jobs_message`.
 
@@ -15,7 +15,8 @@ JSearch (RapidAPI) → filter → Discord webhook. Defaults target **RapidAPI BA
 | Path | Role |
 |------|------|
 | `src/main.py` | Orchestration |
-| `src/jsearch.py` | `fetch_jobs`, `search_jobs`, `filter_jobs` |
+| `src/jsearch.py` | JSearch: `fetch_jobs`, `search_jobs`; `filter_jobs` re-export |
+| `src/jobs_search_api.py` | JOBS SEARCH API: `fetch_jobs`, `search_jobs`, quota exception |
 | `src/job_filter.py` | `filter_jobs` implementation |
 | `src/job_formatter.py` | `format_job_embed`, `format_header_message` |
 | `src/discord_notifier.py` | `send_header`, `send_job_embed`, `send_summary`, `send_no_jobs_message` |
@@ -37,11 +38,11 @@ JSEARCH_API_KEY=your_key_here
 DISCORD_WEBHOOK_URL=your_webhook_here
 ```
 
-Optional: `SEARCH_KEYWORDS`, `MAX_JOBS_PER_POST` (default **15**, max 25), `POSTED_JOBS_FILE`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`.
+Optional: `JOB_SEARCH_PROVIDER` (`jsearch` or `jobs_search`), `SEARCH_KEYWORDS`, `MAX_JOBS_PER_POST` (default **15**, max 25), `POSTED_JOBS_FILE`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`.
 
 ### Free / BASIC tier (default behavior)
 
-Rough monthly requests ≈ **`JSEARCH_MAX_KEYWORDS` × len(`FETCH_LOCATIONS`) × scheduled runs per month`** (plus manual runs). Defaults keep this small:
+Rough monthly upstream requests ≈ **`JSEARCH_MAX_KEYWORDS` × len(`FETCH_LOCATIONS`) × `JOB_SEARCH_NUM_PAGES` × scheduled runs per month`** (plus manual runs). Each provider has its own RapidAPI quota (JOBS SEARCH API Basic is typically **~100 requests/month** — check the listing). Defaults keep this small:
 
 | Setting | Default | Purpose |
 |---------|---------|--------|
@@ -79,7 +80,7 @@ Use this repo as the **root** of the GitHub project (so `.github/workflows/job_s
 
 5. **Schedules** — By default cron runs **once** at **15:00 UTC** (**10 AM EST**). First run may wait until the next slot after you push.
 
-6. **Optional variables** — **Settings → Secrets and variables → Actions** → **Variables** tab (not Secrets): `SEARCH_KEYWORDS`, `JSEARCH_MAX_KEYWORDS`, `FETCH_LOCATIONS`, `MAX_JOBS_PER_POST`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`, `POSTED_JOBS_FILE` — only if you want overrides without code changes.
+6. **Optional variables** — **Settings → Secrets and variables → Actions** → **Variables** tab (not Secrets): `SEARCH_KEYWORDS`, `JSEARCH_MAX_KEYWORDS`, `FETCH_LOCATIONS`, `MAX_JOBS_PER_POST`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`, `POSTED_JOBS_FILE` — only if you want overrides without code changes. Source selection is **`JOB_SEARCH_PROVIDER`** in the workflow file (`jobs_search` vs `jsearch`).
 
 ### First-time clone / push (reference)
 

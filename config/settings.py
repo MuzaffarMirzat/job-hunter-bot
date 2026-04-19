@@ -49,7 +49,10 @@ DEFAULT_SEARCH_KEYWORDS = [
 
 @dataclass(frozen=True)
 class Settings:
+    """``job_search_provider``: ``jsearch`` (default) or ``jobs_search`` (RapidAPI JOBS SEARCH API)."""
+
     jsearch_api_key: str
+    job_search_provider: str
     discord_webhook_url: str
     search_keywords: tuple[str, ...]
     fetch_locations: tuple[str, ...]
@@ -64,7 +67,16 @@ class Settings:
     def load(project_root: Path) -> "Settings":
         key = _env("JSEARCH_API_KEY") or _env("JSEARCH_RAPIDAPI_KEY") or _env("RAPIDAPI_KEY")
         if not key:
-            raise RuntimeError("Set JSEARCH_API_KEY to your RapidAPI key for JSearch.")
+            raise RuntimeError(
+                "Set JSEARCH_API_KEY (or RAPIDAPI_KEY) to your RapidAPI key "
+                "(same key works for JSearch and JOBS SEARCH API if you subscribe to each)."
+            )
+
+        prov_raw = (_env("JOB_SEARCH_PROVIDER", "jsearch") or "jsearch").strip().lower()
+        if prov_raw in ("jobs_search", "jobs-search", "rapidapi_jobs", "google_jobs", "jobsearch"):
+            job_search_provider = "jobs_search"
+        else:
+            job_search_provider = "jsearch"
 
         webhook = _env("DISCORD_WEBHOOK_URL")
         if not webhook:
@@ -99,6 +111,7 @@ class Settings:
 
         return Settings(
             jsearch_api_key=key,
+            job_search_provider=job_search_provider,
             discord_webhook_url=webhook,
             search_keywords=keywords,
             fetch_locations=fetch_locs,

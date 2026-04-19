@@ -64,6 +64,11 @@ def format_job_embed(job: dict[str, Any]) -> dict[str, Any]:
     job_title = _first(job.get("job_title"), job.get("title")) or "Job listing"
     employer = _first(job.get("employer_name"), job.get("employer_company_type")) or "—"
     apply_link = _first(job.get("job_apply_link"), job.get("job_google_link"), job.get("apply_link")) or "#"
+    footer_api = (
+        "Jobs Search API"
+        if job.get("_source_api") == "jobs_search_api"
+        else "JSearch"
+    )
     employment = _first(job.get("job_employment_type")) or "Not listed"
     salary = _format_salary(job)
     location = _format_location(job)
@@ -87,7 +92,7 @@ def format_job_embed(job: dict[str, Any]) -> dict[str, Any]:
         "url": apply_link if apply_link != "#" else None,
         "color": _EMBED_BLUE,
         "fields": fields,
-        "footer": {"text": "Job Hunter Bot • JSearch"},
+        "footer": {"text": f"Job Hunter Bot • {footer_api}"},
     }
     return {k: v for k, v in embed.items() if v is not None}
 

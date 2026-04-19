@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Entry point: JSearch → filter → Discord (header, embeds, summary)."""
+"""Entry point: job search API → filter → Discord (header, embeds, summary)."""
 
 from __future__ import annotations
 
@@ -24,7 +24,8 @@ from src.discord_notifier import (  # noqa: E402
 )
 from src.job_formatter import format_job_embed  # noqa: E402
 from src.job_ids import stable_job_id  # noqa: E402
-from src.jsearch import JSearchQuotaExceeded, fetch_jobs, filter_jobs  # noqa: E402
+from src.jobs_search_api import JobsSearchQuotaExceeded, fetch_jobs as fetch_jobs_jobs_search  # noqa: E402
+from src.jsearch import JSearchQuotaExceeded, fetch_jobs as fetch_jobs_jsearch, filter_jobs  # noqa: E402
 from src.posted_state import ensure_posted_jobs_file, load_posted_job_ids, merge_posted_job_ids  # noqa: E402
 
 logging.basicConfig(
@@ -85,6 +86,11 @@ def main() -> int:
     if settings.max_keywords_per_run is not None:
         keywords = keywords[: settings.max_keywords_per_run]
 
+    use_jobs_search = settings.job_search_provider == "jobs_search"
+    fetch_jobs = fetch_jobs_jobs_search if use_jobs_search else fetch_jobs_jsearch
+    quota_exc = (JobsSearchQuotaExceeded, JSearchQuotaExceeded)
+    source_label = "Jobs Search API" if use_jobs_search else "JSearch"
+
     all_jobs: list[dict[str, Any]] = []
     quota_hit = False
     for keyword in keywords:
@@ -99,9 +105,10 @@ def main() -> int:
                     date_posted=settings.date_posted or "today",
                     country=settings.country,
                 )
-            except JSearchQuotaExceeded as exc:
+            except quota_exc as exc:
                 logger.warning(
-                    "JSearch quota or rate limit — stopping further API calls: %s",
+                    "%s quota or rate limit — stopping further API calls: %s",
+                    source_label,
                     exc.detail[:200],
                 )
                 quota_hit = True
@@ -114,14 +121,25 @@ def main() -> int:
             break
 
     if not all_jobs and quota_hit:
-        send_notice(
-            "⚠️ **JSearch / RapidAPI returned HTTP 429** (quota or rate limit). "
-            "No job data was fetched this run.\n\n"
-            "**Options:** wait for your monthly quota to reset, upgrade JSearch on RapidAPI, "
-            "or tighten free-tier vars: `JSEARCH_MAX_KEYWORDS` (default 3), `FETCH_LOCATIONS` (default `remote`), "
-            "and keep **one** daily cron in the workflow.\n"
-            "<https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch>"
-        )
+        if use_jobs_search:
+            send_notice(
+                "⚠️ **Jobs Search API / RapidAPI returned HTTP 429** (quota or rate limit). "
+                "No job data was fetched this run.\n\n"
+                "**Options:** wait for the monthly quota to reset, upgrade the API plan on RapidAPI, "
+                "or reduce calls: `JSEARCH_MAX_KEYWORDS` (default 3), `FETCH_LOCATIONS` (default `remote`), "
+                "one daily cron, `JOB_SEARCH_NUM_PAGES=1`.\n"
+                "<https://rapidapi.com/rphrp1985/api/jobs-search-api>"
+            )
+        else:
+            send_notice(
+                "⚠️ **JSearch / RapidAPI returned HTTP 429** (quota or rate limit). "
+                "No job data was fetched this run.\n\n"
+                "**Options:** wait for your monthly quota to reset, upgrade JSearch on RapidAPI, "
+                "switch to backup with `JOB_SEARCH_PROVIDER=jobs_search` (subscribe to JOBS SEARCH API), "
+                "or tighten free-tier vars: `JSEARCH_MAX_KEYWORDS` (default 3), `FETCH_LOCATIONS` (default `remote`), "
+                "and keep **one** daily cron in the workflow.\n"
+                "<https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch>"
+            )
         return 0
 
     filtered = filter_jobs(all_jobs, posted_job_ids=posted_job_ids)
@@ -136,7 +154,7 @@ def main() -> int:
     kw_cap = settings.max_keywords_per_run
     cap_txt = "all keywords" if kw_cap is None else f"first {kw_cap} keywords"
     scope = (
-        f"Searching: {', '.join(settings.fetch_locations)} • {cap_txt} per location"
+        f"Searching: {', '.join(settings.fetch_locations)} • {cap_txt} per location • {source_label}"
     )
     send_header(session, new_jobs_count=len(to_post), scope_line=scope)
 
