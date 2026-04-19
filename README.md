@@ -39,6 +39,8 @@ DISCORD_WEBHOOK_URL=your_webhook_here
 
 Optional: `SEARCH_KEYWORDS`, `MAX_JOBS_PER_POST` (default **15**, max 25), `POSTED_JOBS_FILE`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`.
 
+**RapidAPI BASIC / low quotas (HTTP 429):** set **`JSEARCH_MAX_KEYWORDS`** (e.g. `5`) to only search the first N keywords each run, and/or **`FETCH_LOCATIONS=remote`** to skip `united states` (halves JSearch calls). Default locations are `remote` and `united states`. On 429 with no data, the bot posts a short Discord **notice** instead of a traceback.
+
 ```bash
 python src/main.py
 ```
@@ -65,7 +67,7 @@ Use this repo as the **root** of the GitHub project (so `.github/workflows/job_s
 
 5. **Schedules** — Cron runs at **15:00** and **00:00 UTC** daily (**10 AM** and **7 PM EST**). First run may wait until the next slot after you push.
 
-6. **Optional variables** — **Settings → Secrets and variables → Actions** → **Variables** tab (not Secrets): `SEARCH_KEYWORDS`, `MAX_JOBS_PER_POST`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`, `POSTED_JOBS_FILE` — only if you want overrides without code changes.
+6. **Optional variables** — **Settings → Secrets and variables → Actions** → **Variables** tab (not Secrets): `SEARCH_KEYWORDS`, `JSEARCH_MAX_KEYWORDS`, `FETCH_LOCATIONS`, `MAX_JOBS_PER_POST`, `JOB_SEARCH_DATE_POSTED`, `JOB_SEARCH_COUNTRY`, `JOB_SEARCH_NUM_PAGES`, `POSTED_JOBS_FILE` — only if you want overrides without code changes.
 
 ### First-time clone / push (reference)
 

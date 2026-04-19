@@ -32,6 +32,9 @@ def _parse_str_list(raw: str | None, default: list[str]) -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+DEFAULT_FETCH_LOCATIONS = ["remote", "united states"]
+
+
 DEFAULT_SEARCH_KEYWORDS = [
     "test automation",
     "QA automation",
@@ -56,6 +59,8 @@ class Settings:
     jsearch_api_key: str
     discord_webhook_url: str
     search_keywords: tuple[str, ...]
+    fetch_locations: tuple[str, ...]
+    max_keywords_per_run: int | None
     max_jobs_per_post: int
     num_pages: int
     date_posted: str | None
@@ -73,6 +78,18 @@ class Settings:
             raise RuntimeError("Set DISCORD_WEBHOOK_URL to a Discord incoming webhook URL.")
 
         keywords = tuple(_parse_str_list(_env("SEARCH_KEYWORDS"), DEFAULT_SEARCH_KEYWORDS))
+        fetch_locs = tuple(
+            x.strip().lower()
+            for x in _parse_str_list(_env("FETCH_LOCATIONS"), DEFAULT_FETCH_LOCATIONS)
+            if x.strip()
+        )
+        if not fetch_locs:
+            fetch_locs = tuple(DEFAULT_FETCH_LOCATIONS)
+
+        max_kw_raw = _env("JSEARCH_MAX_KEYWORDS")
+        max_keywords: int | None = None
+        if max_kw_raw and max_kw_raw.strip().isdigit():
+            max_keywords = max(1, int(max_kw_raw))
 
         max_jobs = int(_env("MAX_JOBS_PER_POST", "15") or "15")
         num_pages = int(_env("JOB_SEARCH_NUM_PAGES", "1") or "1")
@@ -86,6 +103,8 @@ class Settings:
             jsearch_api_key=key,
             discord_webhook_url=webhook,
             search_keywords=keywords,
+            fetch_locations=fetch_locs,
+            max_keywords_per_run=max_keywords,
             max_jobs_per_post=max(1, min(max_jobs, 25)),
             num_pages=max(1, min(num_pages, 10)),
             date_posted=_env("JOB_SEARCH_DATE_POSTED", "today"),

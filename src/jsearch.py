@@ -9,6 +9,15 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+
+class JSearchQuotaExceeded(Exception):
+    """HTTP 429 from JSearch (monthly/daily quota, burst limits, etc.)."""
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
 RAPID_HOST = "jsearch.p.rapidapi.com"
 SEARCH_URL = f"https://{RAPID_HOST}/search"
 
@@ -55,10 +64,14 @@ def search_jobs(
         params["remote_jobs_only"] = str(remote_jobs_only).lower()
 
     resp = requests.get(SEARCH_URL, headers=headers, params=params, timeout=timeout_sec)
+    if resp.status_code == 429:
+        snippet = (resp.text or "")[:500]
+        logger.warning("JSearch 429 Too Many Requests — %s", snippet)
+        raise JSearchQuotaExceeded(snippet)
     try:
         resp.raise_for_status()
     except requests.HTTPError as exc:
-        logger.error("JSearch HTTP error: %s — body: %s", exc, resp.text[:500])
+        logger.error("JSearch HTTP error: %s — body: %s", exc, (resp.text or "")[:500])
         raise
 
     payload = resp.json()

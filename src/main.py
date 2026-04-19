@@ -19,11 +19,12 @@ from src.discord_notifier import (  # noqa: E402
     send_header,
     send_job_embed,
     send_no_jobs_message,
+    send_notice,
     send_summary,
 )
 from src.job_formatter import format_job_embed  # noqa: E402
 from src.job_ids import stable_job_id  # noqa: E402
-from src.jsearch import fetch_jobs, filter_jobs  # noqa: E402
+from src.jsearch import JSearchQuotaExceeded, fetch_jobs, filter_jobs  # noqa: E402
 from src.posted_state import ensure_posted_jobs_file, load_posted_job_ids, merge_posted_job_ids  # noqa: E402
 
 logging.basicConfig(
@@ -80,32 +81,48 @@ def main() -> int:
     ensure_posted_jobs_file(settings.posted_jobs_path)
     posted_job_ids = load_posted_job_ids(settings.posted_jobs_path)
 
+    keywords = settings.search_keywords
+    if settings.max_keywords_per_run is not None:
+        keywords = keywords[: settings.max_keywords_per_run]
+
     all_jobs: list[dict[str, Any]] = []
-    for keyword in settings.search_keywords:
-        try:
-            remote_batch = fetch_jobs(
-                keyword,
-                "remote",
-                api_key=settings.jsearch_api_key,
-                page=1,
-                num_pages=settings.num_pages,
-                date_posted=settings.date_posted or "today",
-                country=settings.country,
-            )
-            us_batch = fetch_jobs(
-                keyword,
-                "united states",
-                api_key=settings.jsearch_api_key,
-                page=1,
-                num_pages=settings.num_pages,
-                date_posted=settings.date_posted or "today",
-                country=settings.country,
-            )
-        except Exception:
-            logger.exception("fetch_jobs failed for keyword=%r", keyword)
-            continue
-        all_jobs.extend(remote_batch)
-        all_jobs.extend(us_batch)
+    quota_hit = False
+    for keyword in keywords:
+        for location in settings.fetch_locations:
+            try:
+                batch = fetch_jobs(
+                    keyword,
+                    location,
+                    api_key=settings.jsearch_api_key,
+                    page=1,
+                    num_pages=settings.num_pages,
+                    date_posted=settings.date_posted or "today",
+                    country=settings.country,
+                )
+            except JSearchQuotaExceeded as exc:
+                logger.warning(
+                    "JSearch quota or rate limit — stopping further API calls: %s",
+                    exc.detail[:200],
+                )
+                quota_hit = True
+                break
+            except Exception:
+                logger.exception("fetch_jobs failed for keyword=%r location=%r", keyword, location)
+                continue
+            all_jobs.extend(batch)
+        if quota_hit:
+            break
+
+    if not all_jobs and quota_hit:
+        send_notice(
+            "⚠️ **JSearch / RapidAPI returned HTTP 429** (quota or rate limit). "
+            "No job data was fetched this run.\n\n"
+            "**Options:** upgrade your RapidAPI plan for JSearch, wait for the quota window to reset, "
+            "or reduce calls by setting repo **Variables** such as `JSEARCH_MAX_KEYWORDS=5` and/or "
+            "`FETCH_LOCATIONS=remote` (skips `united states` searches).\n"
+            "<https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch>"
+        )
+        return 0
 
     filtered = filter_jobs(all_jobs, posted_job_ids=posted_job_ids)
     filtered.sort(key=_posted_timestamp, reverse=True)

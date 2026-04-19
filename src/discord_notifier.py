@@ -58,6 +58,12 @@ def send_no_jobs_message() -> None:
     _post_json({"content": text[:2000], "username": "Job Hunter"})
 
 
+def send_notice(content: str) -> None:
+    """POST a short operator message (e.g. API quota, misconfiguration)."""
+    text = (content or "").strip() or "Job Hunter notice."
+    _post_json({"content": text[:2000], "username": "Job Hunter"})
+
+
 def send_webhook(
     webhook_url: str,
     *,
