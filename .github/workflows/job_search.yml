@@ -24,11 +24,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Save uses a new key each run (run_id) so GitHub does not reject overwriting the entry we restored.
+      # restore-keys prefix matches old keys (…/main) and new keys (…/main-<run_id>); newest wins.
       - name: Restore posted_jobs.json
         uses: actions/cache/restore@v5
         with:
           path: .data/posted_jobs.json
-          key: job-hunter-posted-${{ github.ref }}
+          key: job-hunter-posted-${{ github.ref }}-${{ github.run_id }}
+          restore-keys: |
+            job-hunter-posted-${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -51,4 +55,4 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: .data/posted_jobs.json
-          key: job-hunter-posted-${{ github.ref }}
+          key: job-hunter-posted-${{ github.ref }}-${{ github.run_id }}

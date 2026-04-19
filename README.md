@@ -87,3 +87,5 @@ Do **not** commit `.env` (gitignored). Local **`.data/`** is gitignored; CI keep
 **Notes:** EST vs EDT shifts vs UTC; adjust crons if you need fixed Eastern clock times. **Forks** do not run scheduled workflows until enabled in the fork’s Actions settings. The workflow uses **actions/checkout@v6**, **actions/setup-python@v6**, and **actions/cache@v5** (Node.js 24–compatible; avoids GitHub’s Node 20 deprecation warnings on hosted runners).
 
 **Self-hosted runners:** `actions/cache@v5` needs runner **v2.327.1** or newer ([cache release notes](https://github.com/actions/cache/releases)).
+
+**If “Cache save failed”:** the workflow saves under a **new key each run** (`…-${{ github.run_id }}`) and restores via `restore-keys` so GitHub does not reject overwriting the same key you just restored. If it still fails, set **Settings → Actions → General → Workflow permissions** to **Read and write** (org policy can block cache writes even when the YAML sets `actions: write`).
