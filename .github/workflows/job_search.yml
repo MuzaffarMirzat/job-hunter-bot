@@ -22,16 +22,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Restore posted_jobs.json
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .data/posted_jobs.json
           key: job-hunter-posted-${{ github.ref }}
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -48,7 +48,7 @@ jobs:
 
       - name: Save posted_jobs.json
         if: always() && hashFiles('.data/posted_jobs.json') != ''
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .data/posted_jobs.json
           key: job-hunter-posted-${{ github.ref }}

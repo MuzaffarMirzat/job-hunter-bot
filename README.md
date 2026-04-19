@@ -84,4 +84,6 @@ Do **not** commit `.env` (gitignored). Local **`.data/`** is gitignored; CI keep
 - **Cron:** `0 15 * * *` and `0 0 * * *` UTC → **10:00 AM** and **7:00 PM EST** (UTC−5). When US Eastern is on **EDT** (UTC−4), the same runs are **11:00 AM** and **8:00 PM** local.  
 - **Python:** 3.11 on `ubuntu-latest`.
 
-**Notes:** EST vs EDT shifts vs UTC; adjust crons if you need fixed Eastern clock times. **Forks** do not run scheduled workflows until enabled in the fork’s Actions settings.
+**Notes:** EST vs EDT shifts vs UTC; adjust crons if you need fixed Eastern clock times. **Forks** do not run scheduled workflows until enabled in the fork’s Actions settings. The workflow uses **actions/checkout@v6**, **actions/setup-python@v6**, and **actions/cache@v5** (Node.js 24–compatible; avoids GitHub’s Node 20 deprecation warnings on hosted runners).
+
+**Self-hosted runners:** `actions/cache@v5` needs runner **v2.327.1** or newer ([cache release notes](https://github.com/actions/cache/releases)).
